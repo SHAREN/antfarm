@@ -180,8 +180,9 @@ steps:
       FIX_APPROACH: {{fix_approach}}
       PROBLEM_STATEMENT: {{problem_statement}}
 
-      VERIFY FEEDBACK (if retrying):
-      {{verify_feedback}}
+      VERIFY FEEDBACK:
+      - If this is a retry after verifier feedback, apply the verifier feedback from run context.
+      - If this is the first fix pass, there may be no verifier feedback yet — proceed without it.
 
       Instructions:
       1. cd into the repo, checkout the branch
