@@ -206,7 +206,7 @@ export async function scheduleWorkflowAgentSoon(params: {
   agentId: string;
   runId: string;
   stepId: string;
-}): Promise<{ ok: boolean; error?: string; id?: string }> {
+}): Promise<{ ok: true; id?: string }> {
   const agentId = params.agentId;
   const fullAgentId = `${params.workflowId}_${agentId}`;
   const requestedWorkModel = DEFAULT_POLLING_MODEL;
@@ -219,7 +219,7 @@ export async function scheduleWorkflowAgentSoon(params: {
   await deleteAgentCronJobs(triggerName);
 
   const at = new Date(Date.now() + DEFAULT_DELAYED_DISPATCH_MS).toISOString();
-  return await createAgentCronJob({
+  const result = await createAgentCronJob({
     name: triggerName,
     schedule: { kind: "at", at },
     sessionTarget: "isolated",
@@ -234,6 +234,14 @@ export async function scheduleWorkflowAgentSoon(params: {
     enabled: true,
     deleteAfterRun: true,
   });
+
+  if (!result.ok) {
+    throw new Error(
+      `Failed to schedule delayed workflow dispatch (trigger=${triggerName}, workflowId=${params.workflowId}, runId=${params.runId}, stepId=${params.stepId}, agentId=${agentId}): ${result.error ?? "unknown error"}`
+    );
+  }
+
+  return { ok: true, id: result.id };
 }
 
 // ── Run-scoped cron lifecycle ───────────────────────────────────────
