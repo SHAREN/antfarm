@@ -320,7 +320,7 @@ export async function runCronJob(jobId: string): Promise<{ ok: boolean; error?: 
 
   // --- CLI fallback ---
   try {
-    await runCli(["cron", "run", jobId, "--json"]);
+    await runCli(["cron", "run", jobId]);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: `CLI fallback failed: ${err}. ${UPDATE_HINT}` };
