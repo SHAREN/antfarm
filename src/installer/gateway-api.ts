@@ -313,6 +313,20 @@ async function listCronJobsHTTP(): Promise<{ ok: boolean; jobs?: Array<{ id: str
   }
 }
 
+export async function runCronJob(jobId: string): Promise<{ ok: boolean; error?: string }> {
+  // --- Try HTTP first ---
+  const httpResult = await runCronJobHTTP(jobId);
+  if (httpResult !== null) return httpResult;
+
+  // --- CLI fallback ---
+  try {
+    await runCli(["cron", "run", jobId, "--json"]);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: `CLI fallback failed: ${err}. ${UPDATE_HINT}` };
+  }
+}
+
 export async function deleteCronJob(jobId: string): Promise<{ ok: boolean; error?: string }> {
   // --- Try HTTP first ---
   const httpResult = await deleteCronJobHTTP(jobId);
@@ -324,6 +338,32 @@ export async function deleteCronJob(jobId: string): Promise<{ ok: boolean; error
     return { ok: true };
   } catch (err) {
     return { ok: false, error: `CLI fallback failed: ${err}. ${UPDATE_HINT}` };
+  }
+}
+
+/** HTTP-only run. Returns null on 404/network error. */
+async function runCronJobHTTP(jobId: string): Promise<{ ok: boolean; error?: string } | null> {
+  const gateway = await getGatewayConfig();
+  try {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (gateway.secret) headers["Authorization"] = `Bearer ${gateway.secret}`;
+
+    const response = await fetch(`${gateway.url}/tools/invoke`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ tool: "cron", args: { action: "run", id: jobId }, sessionKey: "agent:main:main" }),
+    });
+
+    if (isTransientGatewayFailure(response.status)) return null;
+
+    if (!response.ok) {
+      return { ok: false, error: `Gateway returned ${response.status}` };
+    }
+
+    const result = await response.json();
+    return result.ok ? { ok: true } : { ok: false, error: result.error?.message ?? "Unknown error" };
+  } catch {
+    return null;
   }
 }
 

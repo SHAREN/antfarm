@@ -616,11 +616,19 @@ async function main() {
         // Ensure crons are running for this workflow
         const { loadWorkflowSpec } = await import("../installer/workflow-spec.js");
         const { resolveWorkflowDir } = await import("../installer/paths.js");
-        const { ensureWorkflowCrons } = await import("../installer/agent-cron.js");
+        const { ensureWorkflowCrons, triggerWorkflowAgentNow } = await import("../installer/agent-cron.js");
         try {
           const workflowDir = resolveWorkflowDir(run.workflow_id);
           const workflow = await loadWorkflowSpec(workflowDir);
           await ensureWorkflowCrons(workflow);
+          const loopStepRow = db.prepare("SELECT agent_id FROM steps WHERE id = ?").get(loopStep.id) as { agent_id: string } | undefined;
+          const shortAgentId = loopStepRow?.agent_id?.replace(`${run.workflow_id}_`, "");
+          if (shortAgentId) {
+            const dispatchResult = await triggerWorkflowAgentNow(run.workflow_id, shortAgentId);
+            if (!dispatchResult.ok) {
+              process.stderr.write(`Warning: Immediate dispatch failed: ${dispatchResult.error ?? "unknown error"}\n`);
+            }
+          }
         } catch (err) {
           process.stderr.write(`Warning: Could not start crons: ${err instanceof Error ? err.message : String(err)}\n`);
         }
@@ -643,11 +651,19 @@ async function main() {
     // Ensure crons are running for this workflow
     const { loadWorkflowSpec } = await import("../installer/workflow-spec.js");
     const { resolveWorkflowDir } = await import("../installer/paths.js");
-    const { ensureWorkflowCrons } = await import("../installer/agent-cron.js");
+    const { ensureWorkflowCrons, triggerWorkflowAgentNow } = await import("../installer/agent-cron.js");
     try {
       const workflowDir = resolveWorkflowDir(run.workflow_id);
       const workflow = await loadWorkflowSpec(workflowDir);
       await ensureWorkflowCrons(workflow);
+      const stepRow = db.prepare("SELECT agent_id FROM steps WHERE id = ?").get(failedStep.id) as { agent_id: string } | undefined;
+      const shortAgentId = stepRow?.agent_id?.replace(`${run.workflow_id}_`, "");
+      if (shortAgentId) {
+        const dispatchResult = await triggerWorkflowAgentNow(run.workflow_id, shortAgentId);
+        if (!dispatchResult.ok) {
+          process.stderr.write(`Warning: Immediate dispatch failed: ${dispatchResult.error ?? "unknown error"}\n`);
+        }
+      }
     } catch (err) {
       process.stderr.write(`Warning: Could not start crons: ${err instanceof Error ? err.message : String(err)}\n`);
     }

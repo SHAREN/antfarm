@@ -1,4 +1,4 @@
-import { createAgentCronJob, deleteAgentCronJobs, listCronJobs, checkCronToolAvailable } from "./gateway-api.js";
+import { createAgentCronJob, deleteAgentCronJobs, listCronJobs, checkCronToolAvailable, runCronJob } from "./gateway-api.js";
 import type { WorkflowSpec } from "./types.js";
 import { resolveAntfarmCli } from "./paths.js";
 import { getDb } from "../db.js";
@@ -29,12 +29,12 @@ The "input" field contains your FULLY RESOLVED task instructions. Read it carefu
 Step 3 — Do the work described in the input. Format your output with KEY: value lines as specified.
 
 Step 4 — MANDATORY: Report completion (do this IMMEDIATELY after finishing the work):
+1. Re-read the claimed step input.
+2. If the input includes a "Reply with:" section, use that exact KEY: value format.
+3. Do not invent a generic completion template.
+4. Write your final step output to /tmp/antfarm-step-output.txt.
+5. Then report completion:
 \`\`\`
-cat <<'ANTFARM_EOF' > /tmp/antfarm-step-output.txt
-STATUS: done
-CHANGES: what you did
-TESTS: what tests you ran
-ANTFARM_EOF
 cat /tmp/antfarm-step-output.txt | node ${cli} step complete "<stepId>"
 \`\`\`
 
@@ -66,12 +66,12 @@ The "input" field contains your FULLY RESOLVED task instructions. Read it carefu
 Do the work described in the input. Format your output with KEY: value lines as specified.
 
 MANDATORY: Report completion (do this IMMEDIATELY after finishing the work):
+1. Re-read the claimed step input.
+2. If the input includes a "Reply with:" section, use that exact KEY: value format.
+3. Do not invent a generic completion template.
+4. Write your final step output to /tmp/antfarm-step-output.txt.
+5. Then report completion:
 \`\`\`
-cat <<'ANTFARM_EOF' > /tmp/antfarm-step-output.txt
-STATUS: done
-CHANGES: what you did
-TESTS: what tests you ran
-ANTFARM_EOF
 cat /tmp/antfarm-step-output.txt | node ${cli} step complete "<stepId>"
 \`\`\`
 
@@ -198,6 +198,24 @@ export async function setupAgentCrons(workflow: WorkflowSpec): Promise<void> {
 
 export async function removeAgentCrons(workflowId: string): Promise<void> {
   await deleteAgentCronJobs(`antfarm/${workflowId}/`);
+}
+
+export async function triggerWorkflowAgentNow(
+  workflowId: string,
+  shortAgentId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const cronName = `antfarm/${workflowId}/${shortAgentId}`;
+  const result = await listCronJobs();
+  if (!result.ok || !result.jobs) {
+    return { ok: false, error: result.error ?? "Failed to list cron jobs" };
+  }
+
+  const job = result.jobs.find((j) => j.name === cronName);
+  if (!job) {
+    return { ok: false, error: `Cron job not found: ${cronName}` };
+  }
+
+  return runCronJob(job.id);
 }
 
 // ── Run-scoped cron lifecycle ───────────────────────────────────────
