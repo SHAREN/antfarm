@@ -3,7 +3,7 @@ import { loadWorkflowSpec } from "./workflow-spec.js";
 import { resolveWorkflowDir } from "./paths.js";
 import { getDb, nextRunNumber } from "../db.js";
 import { logger } from "../lib/logger.js";
-import { ensureWorkflowCrons, triggerWorkflowAgentNow } from "./agent-cron.js";
+import { ensureWorkflowCrons } from "./agent-cron.js";
 import { emitEvent } from "./events.js";
 
 export async function runWorkflow(params: {
@@ -61,25 +61,6 @@ export async function runWorkflow(params: {
     db2.prepare("UPDATE runs SET status = 'failed', updated_at = ? WHERE id = ?").run(new Date().toISOString(), runId);
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`Cannot start workflow run: cron setup failed. ${message}`);
-  }
-
-  const firstAgentId = workflow.steps[0]?.agent;
-  if (firstAgentId) {
-    void triggerWorkflowAgentNow(workflow.id, firstAgentId).then((result) => {
-      if (!result.ok) {
-        logger.warn(`Immediate dispatch failed on run start: ${result.error ?? "unknown error"}`, {
-          workflowId: workflow.id,
-          runId,
-          stepId: workflow.steps[0]?.id,
-        });
-      }
-    }).catch((err) => {
-      logger.warn(`Immediate dispatch failed on run start: ${err instanceof Error ? err.message : String(err)}`, {
-        workflowId: workflow.id,
-        runId,
-        stepId: workflow.steps[0]?.id,
-      });
-    });
   }
 
   emitEvent({ ts: new Date().toISOString(), event: "run.started", runId, workflowId: workflow.id });

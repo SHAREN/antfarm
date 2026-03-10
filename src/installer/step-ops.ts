@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { execSync, execFileSync } from "node:child_process";
-import { teardownWorkflowCronsIfIdle, triggerWorkflowAgentNow } from "./agent-cron.js";
+import { teardownWorkflowCronsIfIdle } from "./agent-cron.js";
 import { emitEvent } from "./events.js";
 import { logger } from "../lib/logger.js";
 import { sendSessionMessage } from "./gateway-api.js";
@@ -75,29 +75,6 @@ function getWorkflowId(runId: string): string | undefined {
     const row = db.prepare("SELECT workflow_id FROM runs WHERE id = ?").get(runId) as { workflow_id: string } | undefined;
     return row?.workflow_id;
   } catch { return undefined; }
-}
-
-function shortAgentIdForWorkflow(workflowId: string, fullAgentId: string): string {
-  const prefix = `${workflowId}_`;
-  return fullAgentId.startsWith(prefix) ? fullAgentId.slice(prefix.length) : fullAgentId;
-}
-
-async function triggerPendingStepNow(
-  runId: string,
-  step: { step_id: string; agent_id: string }
-): Promise<void> {
-  const workflowId = getWorkflowId(runId);
-  if (!workflowId) return;
-
-  const shortAgentId = shortAgentIdForWorkflow(workflowId, step.agent_id);
-  const result = await triggerWorkflowAgentNow(workflowId, shortAgentId);
-  if (!result.ok) {
-    logger.warn(`Immediate dispatch failed after pipeline advance: ${result.error ?? "unknown error"}`, {
-      runId,
-      workflowId,
-      stepId: step.step_id,
-    });
-  }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -950,8 +927,8 @@ function advancePipeline(runId: string): { advanced: boolean; runCompleted: bool
   }
 
   const next = db.prepare(
-    "SELECT id, step_id, agent_id FROM steps WHERE run_id = ? AND status = 'waiting' ORDER BY step_index ASC LIMIT 1"
-  ).get(runId) as { id: string; step_id: string; agent_id: string } | undefined;
+    "SELECT id, step_id FROM steps WHERE run_id = ? AND status = 'waiting' ORDER BY step_index ASC LIMIT 1"
+  ).get(runId) as { id: string; step_id: string } | undefined;
 
   const incomplete = db.prepare(
     "SELECT id FROM steps WHERE run_id = ? AND status IN ('failed', 'pending', 'running') LIMIT 1"
@@ -968,13 +945,6 @@ function advancePipeline(runId: string): { advanced: boolean; runCompleted: bool
     ).run(next.id);
     emitEvent({ ts: new Date().toISOString(), event: "pipeline.advanced", runId, workflowId: wfId, stepId: next.step_id });
     emitEvent({ ts: new Date().toISOString(), event: "step.pending", runId, workflowId: wfId, stepId: next.step_id });
-    void triggerPendingStepNow(runId, next).catch((err) => {
-      logger.warn(`Immediate dispatch failed after pipeline advance: ${err instanceof Error ? err.message : String(err)}`, {
-        runId,
-        workflowId: wfId,
-        stepId: next.step_id,
-      });
-    });
     return { advanced: true, runCompleted: false };
   } else {
     db.prepare(
