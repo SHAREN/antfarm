@@ -79,6 +79,9 @@ agents:
         SOUL.md: ../../agents/shared/pr/SOUL.md
         IDENTITY.md: ../../agents/shared/pr/IDENTITY.md
 
+notifications:
+  url: http://127.0.0.1:4317/
+
 steps:
   - id: triage
     agent: triager
