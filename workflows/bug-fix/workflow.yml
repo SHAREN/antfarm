@@ -103,6 +103,11 @@ steps:
       AFFECTED_AREA: what files/modules are affected
       REPRODUCTION: how to reproduce the bug
       PROBLEM_STATEMENT: clear description of what's wrong
+
+      Mandatory completion rule:
+      - Do not finish the step until all required fields above are present and non-empty.
+      - If any required field is missing, investigate further and request/derive the information from codebase context and task details first.
+      - Do not use placeholders like "unknown" for required fields.
     expects: "STATUS: done"
     max_retries: 2
     on_fail:
@@ -181,8 +186,8 @@ steps:
       PROBLEM_STATEMENT: {{problem_statement}}
 
       VERIFY FEEDBACK:
-      - If this is a retry after verifier feedback, apply the verifier feedback from run context.
-      - If this is the first fix pass, there may be no verifier feedback yet — proceed without it.
+      - Apply verifier feedback only on retry cycles (after verify returned STATUS: retry).
+      - On first pass, proceed without verify feedback.
 
       Instructions:
       1. cd into the repo, checkout the branch

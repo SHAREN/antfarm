@@ -34,6 +34,7 @@ Generate a descriptive branch name: `bugfix/<short-description>` (e.g., `bugfix/
 
 ## Output Format
 
+Important!!! All fields are required!!!
 ```
 STATUS: done
 REPO: /path/to/repo
