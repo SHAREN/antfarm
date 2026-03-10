@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { execSync, execFileSync } from "node:child_process";
-import { teardownWorkflowCronsIfIdle } from "./agent-cron.js";
+import { teardownWorkflowCronsIfIdle, scheduleWorkflowAgentSoon } from "./agent-cron.js";
 import { emitEvent } from "./events.js";
 import { logger } from "../lib/logger.js";
 import { sendSessionMessage } from "./gateway-api.js";
@@ -927,8 +927,8 @@ function advancePipeline(runId: string): { advanced: boolean; runCompleted: bool
   }
 
   const next = db.prepare(
-    "SELECT id, step_id FROM steps WHERE run_id = ? AND status = 'waiting' ORDER BY step_index ASC LIMIT 1"
-  ).get(runId) as { id: string; step_id: string } | undefined;
+    "SELECT id, step_id, agent_id FROM steps WHERE run_id = ? AND status = 'waiting' ORDER BY step_index ASC LIMIT 1"
+  ).get(runId) as { id: string; step_id: string; agent_id: string } | undefined;
 
   const incomplete = db.prepare(
     "SELECT id FROM steps WHERE run_id = ? AND status IN ('failed', 'pending', 'running') LIMIT 1"
@@ -945,6 +945,16 @@ function advancePipeline(runId: string): { advanced: boolean; runCompleted: bool
     ).run(next.id);
     emitEvent({ ts: new Date().toISOString(), event: "pipeline.advanced", runId, workflowId: wfId, stepId: next.step_id });
     emitEvent({ ts: new Date().toISOString(), event: "step.pending", runId, workflowId: wfId, stepId: next.step_id });
+    if (wfId && next.agent_id) {
+      const shortAgentId = next.agent_id.startsWith(`${wfId}_`) ? next.agent_id.slice(`${wfId}_`.length) : next.agent_id;
+      void scheduleWorkflowAgentSoon({ workflowId: wfId, agentId: shortAgentId, runId, stepId: next.step_id }).catch((err) => {
+        logger.warn(`Delayed dispatch scheduling failed after pipeline advance: ${err instanceof Error ? err.message : String(err)}`, {
+          workflowId: wfId,
+          runId,
+          stepId: next.step_id,
+        });
+      });
+    }
     return { advanced: true, runCompleted: false };
   } else {
     db.prepare(

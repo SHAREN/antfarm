@@ -5,6 +5,7 @@ import { getDb } from "../db.js";
 import { readOpenClawConfig } from "./openclaw-config.js";
 
 const DEFAULT_EVERY_MS = 300_000; // 5 minutes
+const DEFAULT_DELAYED_DISPATCH_MS = 5_000; // 5 seconds
 const DEFAULT_AGENT_TIMEOUT_SECONDS = 30 * 60; // 30 minutes
 
 function buildAgentPrompt(workflowId: string, agentId: string): string {
@@ -29,12 +30,12 @@ The "input" field contains your FULLY RESOLVED task instructions. Read it carefu
 Step 3 — Do the work described in the input. Format your output with KEY: value lines as specified.
 
 Step 4 — MANDATORY: Report completion (do this IMMEDIATELY after finishing the work):
+1. Re-read the claimed step input.
+2. If the input includes a "Reply with:" section, use that exact KEY: value format.
+3. Do not invent a generic completion template.
+4. Write your final step output to /tmp/antfarm-step-output.txt.
+5. Then report completion:
 \`\`\`
-cat <<'ANTFARM_EOF' > /tmp/antfarm-step-output.txt
-STATUS: done
-CHANGES: what you did
-TESTS: what tests you ran
-ANTFARM_EOF
 cat /tmp/antfarm-step-output.txt | node ${cli} step complete "<stepId>"
 \`\`\`
 
@@ -66,12 +67,12 @@ The "input" field contains your FULLY RESOLVED task instructions. Read it carefu
 Do the work described in the input. Format your output with KEY: value lines as specified.
 
 MANDATORY: Report completion (do this IMMEDIATELY after finishing the work):
+1. Re-read the claimed step input.
+2. If the input includes a "Reply with:" section, use that exact KEY: value format.
+3. Do not invent a generic completion template.
+4. Write your final step output to /tmp/antfarm-step-output.txt.
+5. Then report completion:
 \`\`\`
-cat <<'ANTFARM_EOF' > /tmp/antfarm-step-output.txt
-STATUS: done
-CHANGES: what you did
-TESTS: what tests you ran
-ANTFARM_EOF
 cat /tmp/antfarm-step-output.txt | node ${cli} step complete "<stepId>"
 \`\`\`
 
@@ -198,6 +199,41 @@ export async function setupAgentCrons(workflow: WorkflowSpec): Promise<void> {
 
 export async function removeAgentCrons(workflowId: string): Promise<void> {
   await deleteAgentCronJobs(`antfarm/${workflowId}/`);
+}
+
+export async function scheduleWorkflowAgentSoon(params: {
+  workflowId: string;
+  agentId: string;
+  runId: string;
+  stepId: string;
+}): Promise<{ ok: boolean; error?: string; id?: string }> {
+  const agentId = params.agentId;
+  const fullAgentId = `${params.workflowId}_${agentId}`;
+  const requestedWorkModel = DEFAULT_POLLING_MODEL;
+  const workModel = await resolveAgentCronModel(fullAgentId, requestedWorkModel);
+  const requestedPollingModel = DEFAULT_POLLING_MODEL;
+  const pollingModel = await resolveAgentCronModel(fullAgentId, requestedPollingModel);
+  const prompt = buildPollingPrompt(params.workflowId, agentId, workModel);
+  const triggerName = `antfarm/dispatch/${params.workflowId}/${params.runId}/${params.stepId}/${agentId}`;
+
+  await deleteAgentCronJobs(triggerName);
+
+  const at = new Date(Date.now() + DEFAULT_DELAYED_DISPATCH_MS).toISOString();
+  return await createAgentCronJob({
+    name: triggerName,
+    schedule: { kind: "at", at },
+    sessionTarget: "isolated",
+    agentId: fullAgentId,
+    payload: {
+      kind: "agentTurn",
+      message: prompt,
+      model: pollingModel,
+      timeoutSeconds: DEFAULT_POLLING_TIMEOUT_SECONDS,
+    },
+    delivery: { mode: "none" },
+    enabled: true,
+    deleteAfterRun: true,
+  });
 }
 
 // ── Run-scoped cron lifecycle ───────────────────────────────────────

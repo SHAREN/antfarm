@@ -3,7 +3,7 @@ import { loadWorkflowSpec } from "./workflow-spec.js";
 import { resolveWorkflowDir } from "./paths.js";
 import { getDb, nextRunNumber } from "../db.js";
 import { logger } from "../lib/logger.js";
-import { ensureWorkflowCrons } from "./agent-cron.js";
+import { ensureWorkflowCrons, scheduleWorkflowAgentSoon } from "./agent-cron.js";
 import { emitEvent } from "./events.js";
 
 export async function runWorkflow(params: {
@@ -61,6 +61,22 @@ export async function runWorkflow(params: {
     db2.prepare("UPDATE runs SET status = 'failed', updated_at = ? WHERE id = ?").run(new Date().toISOString(), runId);
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(`Cannot start workflow run: cron setup failed. ${message}`);
+  }
+
+  const firstStep = workflow.steps[0];
+  if (firstStep) {
+    void scheduleWorkflowAgentSoon({
+      workflowId: workflow.id,
+      agentId: firstStep.agent,
+      runId,
+      stepId: firstStep.id,
+    }).catch((err) => {
+      logger.warn(`Delayed dispatch scheduling failed on run start: ${err instanceof Error ? err.message : String(err)}`, {
+        workflowId: workflow.id,
+        runId,
+        stepId: firstStep.id,
+      });
+    });
   }
 
   emitEvent({ ts: new Date().toISOString(), event: "run.started", runId, workflowId: workflow.id });

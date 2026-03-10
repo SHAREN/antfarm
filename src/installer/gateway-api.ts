@@ -119,12 +119,13 @@ function isTransientGatewayFailure(status: number | undefined): boolean {
 
 export async function createAgentCronJob(job: {
   name: string;
-  schedule: { kind: string; everyMs?: number; anchorMs?: number };
+  schedule: { kind: string; everyMs?: number; anchorMs?: number; at?: string };
   sessionTarget: string;
   agentId: string;
   payload: { kind: string; message: string; model?: string; timeoutSeconds?: number };
   delivery?: { mode: "none" | "announce"; channel?: string; to?: string };
   enabled: boolean;
+  deleteAfterRun?: boolean;
 }): Promise<{ ok: boolean; error?: string; id?: string }> {
   // --- Try HTTP first ---
   const httpResult = await createAgentCronJobHTTP(job);
@@ -136,6 +137,9 @@ export async function createAgentCronJob(job: {
 
     if (job.schedule.kind === "every" && job.schedule.everyMs) {
       args.push("--every", `${job.schedule.everyMs}ms`);
+    }
+    if (job.schedule.kind === "at" && job.schedule.at) {
+      args.push("--at", job.schedule.at, "--delete-after-run");
     }
 
     args.push("--session", job.sessionTarget === "isolated" ? "isolated" : "main");
@@ -158,6 +162,12 @@ export async function createAgentCronJob(job: {
 
     if (job.delivery?.mode === "announce") {
       args.push("--announce");
+    } else {
+      args.push("--no-deliver");
+    }
+
+    if (job.deleteAfterRun) {
+      args.push("--delete-after-run");
     }
 
     if (!job.enabled) {
@@ -181,12 +191,13 @@ export async function createAgentCronJob(job: {
 /** HTTP-only attempt. Returns null on 404 (signals: use CLI fallback). */
 async function createAgentCronJobHTTP(job: {
   name: string;
-  schedule: { kind: string; everyMs?: number; anchorMs?: number };
+  schedule: { kind: string; everyMs?: number; anchorMs?: number; at?: string };
   sessionTarget: string;
   agentId: string;
   payload: { kind: string; message: string; model?: string; timeoutSeconds?: number };
   delivery?: { mode: "none" | "announce"; channel?: string; to?: string };
   enabled: boolean;
+  deleteAfterRun?: boolean;
 }): Promise<{ ok: boolean; error?: string; id?: string } | null> {
   const gateway = await getGatewayConfig();
   try {
