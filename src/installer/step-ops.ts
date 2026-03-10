@@ -957,7 +957,7 @@ function advancePipeline(runId: string): { advanced: boolean; runCompleted: bool
     "SELECT id FROM steps WHERE run_id = ? AND status IN ('failed', 'pending', 'running') LIMIT 1"
   ).get(runId) as { id: string } | undefined;
 
-  if (incomplete) {
+  if (!next && incomplete) {
     return { advanced: false, runCompleted: false };
   }
 
