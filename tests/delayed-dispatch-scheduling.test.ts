@@ -6,7 +6,7 @@ import { scheduleWorkflowAgentSoon } from "../dist/installer/agent-cron.js";
 describe("scheduleWorkflowAgentSoon delayed dispatch", () => {
   const originalFetch = globalThis.fetch;
 
-  beforeEach(() => {
+  function installCronFetch(addResponse: { ok: boolean; result?: any; error?: any }) {
     globalThis.fetch = mock.fn(async (_url: string, init: any) => {
       const body = JSON.parse(init.body);
       const action = body?.args?.action;
@@ -23,7 +23,7 @@ describe("scheduleWorkflowAgentSoon delayed dispatch", () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ ok: true, result: { id: "dispatch-job-1" } }),
+          json: async () => addResponse,
         } as any;
       }
 
@@ -33,6 +33,10 @@ describe("scheduleWorkflowAgentSoon delayed dispatch", () => {
         json: async () => ({ ok: true, result: {} }),
       } as any;
     }) as any;
+  }
+
+  beforeEach(() => {
+    installCronFetch({ ok: true, result: { id: "dispatch-job-1" } });
   });
 
   afterEach(() => {
@@ -68,32 +72,7 @@ describe("scheduleWorkflowAgentSoon delayed dispatch", () => {
   });
 
   it("throws when cron creation returns ok:false", async () => {
-    globalThis.fetch = mock.fn(async (_url: string, init: any) => {
-      const body = JSON.parse(init.body);
-      const action = body?.args?.action;
-
-      if (action === "list") {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ ok: true, result: { jobs: [] } }),
-        } as any;
-      }
-
-      if (action === "add") {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ ok: false, error: { message: "cron add failed" } }),
-        } as any;
-      }
-
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ ok: true, result: {} }),
-      } as any;
-    }) as any;
+    installCronFetch({ ok: false, error: { message: "cron add failed" } });
 
     await assert.rejects(
       () =>
@@ -110,5 +89,49 @@ describe("scheduleWorkflowAgentSoon delayed dispatch", () => {
         return true;
       }
     );
+  });
+
+  it("surfaces failure through fire-and-forget catch path used on run start", async () => {
+    installCronFetch({ ok: false, error: { message: "run-start add failed" } });
+
+    let caughtMessage = "";
+    await new Promise<void>((resolve) => {
+      void scheduleWorkflowAgentSoon({
+        workflowId: "wf",
+        agentId: "fixer",
+        runId: "run-start",
+        stepId: "step-first",
+      })
+        .catch((err) => {
+          caughtMessage = String(err?.message ?? err);
+        })
+        .finally(() => resolve());
+    });
+
+    assert.match(caughtMessage, /Failed to schedule delayed workflow dispatch/);
+    assert.match(caughtMessage, /run-start/);
+  });
+
+  it("surfaces failure through fire-and-forget catch path used after pipeline advance", async () => {
+    installCronFetch({ ok: false, error: { message: "pipeline add failed" } });
+
+    let caughtMessage = "";
+    await new Promise<void>((resolve) => {
+      void scheduleWorkflowAgentSoon({
+        workflowId: "wf",
+        agentId: "reviewer",
+        runId: "run-advance",
+        stepId: "step-next",
+      })
+        .catch((err) => {
+          caughtMessage = String(err?.message ?? err);
+        })
+        .finally(() => resolve());
+    });
+
+    assert.match(caughtMessage, /Failed to schedule delayed workflow dispatch/);
+    assert.match(caughtMessage, /run-advance/);
+    assert.match(caughtMessage, /step-next/);
+    assert.match(caughtMessage, /agentId=reviewer/);
   });
 });
