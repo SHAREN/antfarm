@@ -126,12 +126,23 @@ steps:
 
       Instructions:
       1. cd into the repo
-      2. Create the feature branch (git checkout -b {{branch}})
-      3. Read package.json, CI config, test config to understand the build/test setup
-      4. Ensure .gitignore exists — if missing, create one appropriate for the detected stack (must include .env, node_modules/, *.key, *.pem at minimum)
-      5. Run the build to establish a baseline
-      6. Run the tests to establish a baseline
-      7. Report what you found
+      2. If the repo is NOT already a git repository, bootstrap a local git repo:
+         - git init
+         - git checkout -b main
+         - ensure .gitignore exists before the first commit
+         - git add .
+         - git commit -m "baseline"
+      3. Create or reset the working branch for this run (git checkout -B {{branch}})
+      4. Read package.json, CI config, test config to understand the build/test setup
+      5. Ensure .gitignore exists — if missing, create one appropriate for the detected stack (must include .env, node_modules/, *.key, *.pem at minimum)
+      6. Run the build to establish a baseline
+      7. Run the tests to establish a baseline
+      8. Report what you found
+
+      Rules:
+      - Do NOT add a remote
+      - Local git only; no GitHub setup required
+      - If git bootstrap fails, fail the step instead of continuing
 
       Reply with:
       STATUS: done
@@ -180,7 +191,7 @@ steps:
 
       Instructions:
       1. Read progress-{{run_id}}.txt — especially the Codebase Patterns section
-      2. Pull latest on the branch
+      2. Make sure you are on branch {{branch}} (local branch; no remote required)
       3. Implement this story only
       4. Write tests for this story's functionality
       5. Run typecheck / build
