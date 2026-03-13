@@ -159,10 +159,7 @@ export async function uninstallWorkflow(params: {
     await removeMainAgentGuidance();
   }
 
-  if (await pathExists(workflowDir)) {
-    await fs.rm(workflowDir, { recursive: true, force: true });
-  }
-
+  // A1: workflow definitions live in the repo and are not removed by uninstall.
   if (await pathExists(workflowWorkspaceDir)) {
     await fs.rm(workflowWorkspaceDir, { recursive: true, force: true });
   }
@@ -232,11 +229,7 @@ export async function uninstallAllWorkflows(): Promise<void> {
   // Remove all antfarm cron jobs
   await deleteAgentCronJobs("antfarm/");
 
-  const workflowRoot = resolveWorkflowRoot();
-  if (await pathExists(workflowRoot)) {
-    await fs.rm(workflowRoot, { recursive: true, force: true });
-  }
-
+  // A1: keep repo workflow definitions intact; uninstall removes runtime data only.
   const workflowWorkspaceRoot = resolveWorkflowWorkspaceRoot();
   if (await pathExists(workflowWorkspaceRoot)) {
     await fs.rm(workflowWorkspaceRoot, { recursive: true, force: true });

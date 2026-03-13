@@ -35,11 +35,11 @@ export function resolveAntfarmRoot(): string {
 }
 
 export function resolveWorkflowRoot(): string {
-  return path.join(resolveAntfarmRoot(), "workflows");
+  return resolveBundledWorkflowsDir();
 }
 
 export function resolveWorkflowDir(workflowId: string): string {
-  return path.join(resolveWorkflowRoot(), workflowId);
+  return resolveBundledWorkflowDir(workflowId);
 }
 
 export function resolveWorkflowWorkspaceRoot(): string {
