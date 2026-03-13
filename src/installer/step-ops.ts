@@ -216,6 +216,12 @@ function parseAndInsertStories(output: string, runId: string): void {
   const startIdx = lines.findIndex(l => l.startsWith("STORIES_JSON:"));
   if (startIdx === -1) return;
 
+  const db = getDb();
+  const existingCount = db.prepare("SELECT COUNT(*) as cnt FROM stories WHERE run_id = ?").get(runId) as { cnt: number };
+  if ((existingCount?.cnt || 0) > 0) {
+    return;
+  }
+
   // Collect JSON text: first line after prefix, then subsequent lines until next KEY: or end
   const firstLine = lines[startIdx].slice("STORIES_JSON:".length).trim();
   const jsonLines = [firstLine];
@@ -239,7 +245,6 @@ function parseAndInsertStories(output: string, runId: string): void {
     throw new Error(`STORIES_JSON has ${stories.length} stories, max is 20`);
   }
 
-  const db = getDb();
   const now = new Date().toISOString();
   const insert = db.prepare(
     "INSERT INTO stories (id, run_id, story_index, story_id, title, description, acceptance_criteria, status, retry_count, max_retries, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, 2, ?, ?)"
@@ -680,10 +685,13 @@ export function completeStep(stepId: string, output: string): { advanced: boolea
   const db = getDb();
 
   const step = db.prepare(
-    "SELECT id, run_id, step_id, step_index, type, loop_config, current_story_id FROM steps WHERE id = ?"
-  ).get(stepId) as { id: string; run_id: string; step_id: string; step_index: number; type: string; loop_config: string | null; current_story_id: string | null } | undefined;
+    "SELECT id, run_id, step_id, step_index, type, loop_config, current_story_id, status FROM steps WHERE id = ?"
+  ).get(stepId) as { id: string; run_id: string; step_id: string; step_index: number; type: string; loop_config: string | null; current_story_id: string | null; status: string } | undefined;
 
   if (!step) throw new Error(`Step not found: ${stepId}`);
+  if (step.status === "done") {
+    return { advanced: false, runCompleted: false };
+  }
 
   // Guard: don't process completions for failed runs
   const runCheck = db.prepare("SELECT status FROM runs WHERE id = ?").get(step.run_id) as { status: string } | undefined;
