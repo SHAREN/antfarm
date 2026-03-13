@@ -528,11 +528,18 @@ export function claimStep(agentId: string): ClaimResult {
     step_index: number;
   } | undefined;
 
-  if (!step) return { found: false };
+  if (!step) {
+    logger.info(`Claim found no eligible pending step for ${agentId}`);
+    return { found: false };
+  }
 
   // Guard: don't claim work for a failed run
   const runStatus = db.prepare("SELECT status FROM runs WHERE id = ?").get(step.run_id) as { status: string } | undefined;
-  if (runStatus?.status === "failed") return { found: false };
+  if (runStatus?.status === "failed") {
+    logger.info(`Claim blocked because run is failed`, { runId: step.run_id, stepId: step.step_id });
+    return { found: false };
+  }
+  logger.info(`Claim candidate selected for ${agentId}`, { runId: step.run_id, stepId: step.step_id });
 
   // Get run context
   const run = db.prepare("SELECT context FROM runs WHERE id = ?").get(step.run_id) as { context: string } | undefined;
@@ -701,13 +708,16 @@ export function completeStep(stepId: string, output: string): { advanced: boolea
   ).get(stepId) as { id: string; run_id: string; step_id: string; step_index: number; type: string; loop_config: string | null; current_story_id: string | null; status: string } | undefined;
 
   if (!step) throw new Error(`Step not found: ${stepId}`);
+  logger.info(`completeStep start status=${step.status}`, { runId: step.run_id, stepId: step.step_id });
   if (step.status === "done") {
+    logger.info(`completeStep noop because step already done`, { runId: step.run_id, stepId: step.step_id });
     return { advanced: false, runCompleted: false };
   }
 
   // Guard: don't process completions for failed runs
   const runCheck = db.prepare("SELECT status FROM runs WHERE id = ?").get(step.run_id) as { status: string } | undefined;
   if (runCheck?.status === "failed") {
+    logger.info(`completeStep ignored because run already failed`, { runId: step.run_id, stepId: step.step_id });
     return { advanced: false, runCompleted: false };
   }
 
@@ -790,7 +800,11 @@ export function completeStep(stepId: string, output: string): { advanced: boolea
   emitEvent({ ts: new Date().toISOString(), event: "step.done", runId: step.run_id, workflowId: getWorkflowId(step.run_id), stepId: step.step_id });
   logger.info(`Step completed: ${step.step_id}`, { runId: step.run_id, stepId: step.step_id });
 
-  return advancePipeline(step.run_id);
+  const result = advancePipeline(step.run_id);
+  const finalRow = db.prepare("SELECT status, output IS NOT NULL as has_output, updated_at FROM steps WHERE id = ?").get(step.id) as { status: string; has_output: number; updated_at: string } | undefined;
+  logger.info(`completeStep end advanced=${result.advanced} runCompleted=${result.runCompleted} finalStatus=${finalRow?.status ?? "missing"} hasOutput=${finalRow?.has_output ?? 0}`, { runId: step.run_id, stepId: step.step_id });
+
+  return result;
 }
 
 /**

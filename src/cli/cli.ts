@@ -20,7 +20,8 @@ import { uninstallAllWorkflows, uninstallWorkflow, checkActiveRuns } from "../in
 import { getWorkflowStatus, listRuns, stopWorkflow } from "../installer/status.js";
 import { runWorkflow } from "../installer/run.js";
 import { listBundledWorkflows } from "../installer/workflow-fetch.js";
-import { readRecentLogs } from "../lib/logger.js";
+import { readRecentLogs, logger } from "../lib/logger.js";
+import { getDb } from "../db.js";
 import { getRecentEvents, getRunEvents, type AntfarmEvent } from "../installer/events.js";
 import { startDaemon, stopDaemon, getDaemonStatus, isRunning } from "../server/daemonctl.js";
 import { claimStep, completeStep, failStep, getStories, peekStep } from "../installer/step-ops.js";
@@ -372,6 +373,7 @@ async function main() {
     if (action === "claim") {
       if (!target) { process.stderr.write("Missing agent-id.\n"); process.exit(1); }
       const result = claimStep(target);
+      logger.info(`CLI step claim agent=${target} found=${result.found ? "yes" : "no"}`, { runId: result.runId, stepId: result.stepId });
       if (!result.found) {
         process.stdout.write("NO_WORK\n");
       } else {
@@ -391,7 +393,11 @@ async function main() {
         }
         output = Buffer.concat(chunks).toString("utf-8").trim();
       }
+      logger.info(`CLI step complete start step=${target} outputBytes=${Buffer.byteLength(output, "utf-8")}`);
       const result = completeStep(target, output);
+      const db = getDb();
+      const row = db.prepare("SELECT status, updated_at FROM steps WHERE id = ?").get(target) as { status: string; updated_at: string } | undefined;
+      logger.info(`CLI step complete end step=${target} advanced=${result.advanced} runCompleted=${result.runCompleted} dbStatus=${row?.status ?? "missing"} updatedAt=${row?.updated_at ?? "missing"}`);
       process.stdout.write(JSON.stringify(result) + "\n");
       return;
     }
