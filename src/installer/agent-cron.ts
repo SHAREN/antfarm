@@ -129,7 +129,6 @@ async function resolveAgentCronModel(agentId: string, requestedModel?: string): 
 export function buildPollingPrompt(workflowId: string, agentId: string, workModel?: string): string {
   const fullAgentId = `${workflowId}_${agentId}`;
   const cli = resolveAntfarmCli();
-  const model = workModel ?? "default";
   const workPrompt = buildWorkPrompt(workflowId, agentId);
 
   return `Step 1 — Quick check for pending work (lightweight, no side effects):
@@ -144,18 +143,22 @@ node ${cli} step claim "${fullAgentId}"
 \`\`\`
 If output is "NO_WORK", reply HEARTBEAT_OK and stop.
 
-If JSON is returned, parse it to extract stepId, runId, and input fields.
-Then call sessions_spawn with these parameters:
-- agentId: "${fullAgentId}"
-- model: "${model}"
-- task: The full work prompt below, followed by "\\n\\nCLAIMED STEP JSON:\\n" and the exact JSON output from step claim.
+Step 3 — If JSON is returned, parse it to extract stepId, runId, and input fields.
+Then CONTINUE IN THIS SAME SESSION and execute the claimed work directly.
+Do NOT call sessions_spawn. Do NOT hand work off to a child session.
+This is required so the same session that does the work also performs the final step completion.
 
-Full work prompt to include in the spawned task:
+Use the full work prompt below, followed by "\\n\\nCLAIMED STEP JSON:\\n" and the exact JSON output from step claim.
+
 ---START WORK PROMPT---
 ${workPrompt}
 ---END WORK PROMPT---
 
-Reply with a short summary of what you spawned.`;
+Important:
+- complete the work in this same session
+- after finishing, run the required \`step complete\` or \`step fail\` command yourself
+- before ending, verify that the command succeeded
+- if completion fails, call \`step fail\` instead of ending silently`;
 }
 
 export async function setupAgentCrons(workflow: WorkflowSpec): Promise<void> {
